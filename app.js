@@ -17,4 +17,4 @@ app.post('/webhook', (req, res) => {
     //if(req.body.queryResult.parameters.random) { // to make this function work only when menu-rec parameter is given
 
 
-};
+});
