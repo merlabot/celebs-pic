@@ -18,3 +18,8 @@ app.post('/webhook', (req, res) => {
 
 
 });
+
+// Logic for running your server with HTTPS here
+app.listen((process.env.PORT || 8000), () => {
+    console.log("App is up and running...");
+}); // set up 
