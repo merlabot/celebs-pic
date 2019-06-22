@@ -18,7 +18,8 @@ app.post('/webhook', (req, res) => {
     console.log(JSON.stringify(req.body));
     console.log(JSON.stringify(req.body.queryResult.parameters));
     console.log(JSON.stringify(req.body.queryResult.action));
-    
+    console.log(JSON.stringify(req.body.queryResult.action) == "sheety.test");
+
 
     if(req.body.queryResult.parameters.random) { // to make this function work only when menu-rec parameter is given
         const idx = Math.floor((Math.random() * 21) + 1);// a random number between 1 and 21 is generated
