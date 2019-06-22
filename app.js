@@ -18,7 +18,7 @@ app.post('/webhook', (req, res) => {
     console.log(JSON.stringify(req.body));
     console.log(JSON.stringify(req.body.queryResult.parameters));
     console.log(req.body.queryResult.action);
-    console.log(JSON.stringify(req.body.queryResult.action) == "sheety.test");
+    console.log(req.body.queryResult.action == "sheety.test");
 
 
 
