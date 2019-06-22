@@ -16,7 +16,14 @@ app.post('/webhook', (req, res) => {
     console.log("webhook is triggered");//to check if the post function is working well on terminal
 
     console.log(JSON.stringify(req.body));
-    console.log(JSON.stringify(req.body.queryResult.events));
+    console.log(JSON.stringify(req.head));
+    console.log(JSON.stringify(req));
+
+    {"responseId":"97f3e7a2-126d-41d4-8596-64bf445eea30-273dd5df","queryResult":{"queryText":"오랜만이야","action":"input.welcome","parameters":{},"allRequiredParamsPresent":true,"fulfillmentText":"안녕!","fulfillmentMessages":[{"text":{"text":["안녕!"]}}],"outputContexts":[{"name":"projects/celebs-pick-ejbfck/agent/sessions/c61a76fb-4201-436e-b2ea-54322344749d/contexts/generic","lifespanCount":4,"parameters":{"facebook_sender_id":"2134506743285531","random":"","random.original":""}}],"intent":{"name":"projects/celebs-pick-ejbfck/agent/intents/f8bd480f-1f6b-43e1-9a2a-83543527e5b3","displayName":"Default Welcome Intent"},"intentDetectionConfidence":1,"languageCode":"ko"},"originalDetectIntentRequest":{"source":"facebook","payload":{"data":{"recipient":{"id":"663054984135668"},"message":{"seq":0,"text":"오랜만이야","mid":"UsEFgRe9fBprKjiLo_B8td9K9EnCmTBt_28KChHOiV25WD_u2gbkdDBLem7b3zWhJ-v02gQBX1eJSn-LOHY2DQ"},"timestamp":1561187796281,"sender":{"id":"2134506743285531"}},"source":"facebook"}},"session":"projects/celebs-pick-ejbfck/agent/sessions/c61a76fb-4201-436e-b2ea-54322344749d"}
+
+    console.log(JSON.stringify(req.body.queryResult.));
+
+
 
     if(req.body.queryResult.parameters.random) { // to make this function work only when menu-rec parameter is given
         const idx = Math.floor((Math.random() * 21) + 1);// a random number between 1 and 21 is generated
