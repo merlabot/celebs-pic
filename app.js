@@ -16,7 +16,7 @@ app.post('/webhook', (req, res) => {
     console.log("webhook is triggered");//to check if the post function is working well on terminal
 
     console.log(JSON.stringify(req.body));
-    console.log(JSON.stringify(req.body.queryResult.parameters));
+    console.log(JSON.stringify(req.body.queryResult.events));
 
     if(req.body.queryResult.parameters.random) { // to make this function work only when menu-rec parameter is given
         const idx = Math.floor((Math.random() * 21) + 1);// a random number between 1 and 21 is generated
