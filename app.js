@@ -21,7 +21,9 @@ app.post('/webhook', (req, res) => {
     //if(req.body.queryResult.action == "sheety-test") {
     //    console.log("true");
     //}
-
+    res.json({ // process error case
+        fulfillmentText: 'Something went wrong!',
+    });
 })
 
 // Logic for running your server with HTTPS here
