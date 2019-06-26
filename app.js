@@ -8,8 +8,8 @@ const bodyParser = require('body-parser');
 const request = require('request');
 const app = express();
 const uuid = require('uuid');
-const pg = require('pg');
-pg.defaults.ssl = true;
+// const pg = require('pg');
+// pg.defaults.ssl = true;
 
 const broadcast = require('./routes/broadcast');
 const webviews = require('./routes/webviews');
@@ -47,9 +47,9 @@ if (!config.FB_APP_SECRET) {
 if (!config.SERVER_URL) { //used for ink to static files
 	throw new Error('missing SERVER_URL');
 }
-if (!config.PG_CONFIG) { //pg config
-    throw new Error('missing PG_CONFIG');
-}
+// if (!config.PG_CONFIG) { //pg config
+//     throw new Error('missing PG_CONFIG');
+// }
 if (!config.FB_APP_ID) { //app id
     throw new Error('missing FB_APP_ID');
 }
