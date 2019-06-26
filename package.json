@@ -1,7 +1,7 @@
 {
-  "name": "get-rendom-menu",
+  "name": "celebs-pick",
   "version": "1.0.0",
-  "description": "diaglogflow test",
+  "description": "",
   "main": "app.js",
   "scripts": {
     "start": "node app.js"
