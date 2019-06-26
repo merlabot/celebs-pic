@@ -1,177 +1,917 @@
-"use strict";
-// dependencies
+'use strict';
+
+const dialogflow = require('dialogflow');
+const config = require('./config');
 const express = require('express');
+const crypto = require('crypto');
 const bodyParser = require('body-parser');
-const http = require('http');
-
-// configuration
+const request = require('request');
 const app = express();
+const uuid = require('uuid');
+const pg = require('pg');
+pg.defaults.ssl = true;
 
-app.use(bodyParser.json()); // tells the system that you want json to be used.
+const broadcast = require('./routes/broadcast');
+const webviews = require('./routes/webviews');
+
+const userService = require('./services/user-service');
+let dialogflowService = require('./services/dialogflow-service');
+const fbService = require('./services/fb-service');
+
+const passport = require('passport');
+const FacebookStrategy = require('passport-facebook').Strategy;
+const session = require('express-session');
+
+// Messenger API parameters
+if (!config.FB_PAGE_TOKEN) {
+	throw new Error('missing FB_PAGE_TOKEN');
+}
+if (!config.FB_VERIFY_TOKEN) {
+	throw new Error('missing FB_VERIFY_TOKEN');
+}
+if (!config.GOOGLE_PROJECT_ID) {
+	throw new Error('missing GOOGLE_PROJECT_ID');
+}
+if (!config.DF_LANGUAGE_CODE) {
+	throw new Error('missing DF_LANGUAGE_CODE');
+}
+if (!config.GOOGLE_CLIENT_EMAIL) {
+	throw new Error('missing GOOGLE_CLIENT_EMAIL');
+}
+if (!config.GOOGLE_PRIVATE_KEY) {
+	throw new Error('missing GOOGLE_PRIVATE_KEY');
+}
+if (!config.FB_APP_SECRET) {
+	throw new Error('missing FB_APP_SECRET');
+}
+if (!config.SERVER_URL) { //used for ink to static files
+	throw new Error('missing SERVER_URL');
+}
+if (!config.PG_CONFIG) { //pg config
+    throw new Error('missing PG_CONFIG');
+}
+if (!config.FB_APP_ID) { //app id
+    throw new Error('missing FB_APP_ID');
+}
+//if (!config.ADMIN_ID) { //admin id for login
+//    throw new Error('missing ADMIN_ID');
+//}
+//if (!config.FB_PAGE_INBOX_ID) { //page inbox id - the receiver app
+//    throw new Error('missing FB_PAGE_INBOX_ID');
+//}
+
+app.set('port', (process.env.PORT || 5000))
+
+//verify request came from facebook
+app.use(bodyParser.json({
+	verify: fbService.verifyRequestSignature
+}));
+
+//serve static files in the public directory
+app.use(express.static('public'));
+
+// Process application/x-www-form-urlencoded
 app.use(bodyParser.urlencoded({
-    extended: true
-})); // tells the system whether you want to use a simple algorithm for shallow parsing (i.e. false)
+	extended: false
+}));
 
-app.post('/webhook', (req, res) => {
-    console.log("webhook is triggered");//to check if the post function is working well on terminal
+// Process application/json
+app.use(bodyParser.json());
 
-    console.log(JSON.stringify(req.body));
-    console.log(JSON.stringify(req.body.queryResult.parameters));
-    console.log(req.body.queryResult.action);
-    console.log(req.body.queryResult.action == "sheety.test");
+app.use(session(
+    {
+        secret: 'keyboard cat',
+        resave: true,
+        saveUninitilized: true
+    }
+));
 
 
+app.use(passport.initialize());
+app.use(passport.session());
 
-    if(req.body.queryResult.parameters.random) { // to make this function work only when menu-rec parameter is given
-        const idx = Math.floor((Math.random() * 21) + 1);// a random number between 1 and 21 is generated
-        var reqUrl = "http://merlabot-api.herokuapp.com/restaurants/" + String(idx); //concat stringified number after the API address
-
-        http.get(reqUrl, (responseFromAPI) => { // using an http request to query database
-            let completeResponse = '';
-            responseFromAPI.on('data', (chunk) => {
-                completeResponse += chunk;
-            });//default method of http query, don't edit this part!
-
-            responseFromAPI.on('end', () => {
-                const restaurant = JSON.parse(completeResponse);
-                var textToSend = `짜잔~~~ ${restaurant[0].restaurant_name} 먹어보는 거 어때?`;
-                var imageUrl = `${restaurant[0].image_url}`
-                /* the queried url looks like this:
-                [
-                    {"id":1,
-                    "restaurant_name":"Bak Kut Teh",
-                    "image_url":"http://merlabot.com/wp-content/uploads/2019/02/image_id_6.jpg"}
-                ]
-                [0] indicates the first '{}' in '[],' there is only one group in this url anyway
-                .restaurant_name indicates accessing the value with this particular key
-                */
-                console.log(restaurant[0].restaurant_name); // to check on terminal
-                return res.json({
-                         "payload": {
-                            "facebook": {
-                                "attachment":{
-                                  "type":"template",
-                                  "payload":{
-                                    "template_type":"generic",
-                                    "elements":[
-                                      {
-                                        "title":textToSend,
-                                        "subtitle": "#jmt #싱가포르맛집",
-                                        "image_url": imageUrl,
-                                        "buttons": [
-                                          {
-                                            "type": "element_share",
-                                            "share_contents": {
-                                              "attachment": {
-                                                "type": "template",
-                                                "payload": {
-                                                  "template_type": "generic",
-                                                  "elements": [
-                                                    {
-                                                      "title": "멀라봇이 추천해주는 싱가폴 음식",
-                                                      "subtitle": textToSend,
-                                                      "image_url": imageUrl,
-                                                      "default_action": {
-                                                        "type": "web_url",
-                                                        "url": "http://m.me/merlabot?ref=invited_by_id"
-                                                      },
-                                                      "buttons": [
-                                                        {
-                                                          "type": "web_url",
-                                                          "url": "http://m.me/merlabot?ref=invited_by_id",
-                                                          "title": "싱가포르 음식 추천 받기"
-                                                        }
-                                                      ]
-                                                    }
-                                                  ]
-                                                }
-                                              }
-                                            }
-                                          },
-                                        {
-                                            "type": "postback",
-                                            "title": "또 물어보기",
-                                            "payload": "메뉴 추천"
-                                        }
-                                        ]
-                                      }
-                                    ]
-                                  }
-                                }
-                          }
-                       }
-                });
-            });
-        }, (error) => {
-            console.log(error);
-            return res.json({ // process error case
-                fulfillmentText: 'Something went wrong!',
-            });
-        });
-    } else if (req.body.queryResult.parameters) {
-        console.log(JSON.stringify(req.body.queryResult.queryText));
-        var string = JSON.stringify(req.body.queryResult.queryText);
-        console.log(string.length);
-        let textToSend = ' ';
-        for (var i = 1; i < string.length - 1; i++){
-            textToSend += string[i];
-            textToSend += '~';
-        }
-        var imageUrl = `http://merlabot.com/wp-content/uploads/2019/02/KakaoTalk_Photo_2019-02-19-11-25-29.png`;
-                return res.json({
-                         "payload": {
-                            "facebook": {
-                                "attachment":{
-                                  "type":"template",
-                                  "payload":{
-                                    "template_type":"generic",
-                                    "elements":[
-                                      {
-                                        "title":textToSend,
-                                        "subtitle": "#고경표 #밉상 #미안해못알아들었어",
-                                        "image_url": imageUrl,
-                                        "buttons": [
-                                          {
-                                            "type": "element_share",
-                                            "share_contents": {
-                                              "attachment": {
-                                                "type": "template",
-                                                "payload": {
-                                                  "template_type": "generic",
-                                                  "elements": [
-                                                    {
-                                                      "title": "고경표",
-                                                      "subtitle": textToSend,
-                                                      "image_url": imageUrl,
-                                                      "default_action": {
-                                                        "type": "web_url",
-                                                        "url": "http://m.me/merlabot?ref=invited_by_id"
-                                                      },
-                                                      "buttons": [
-                                                        {
-                                                          "type": "web_url",
-                                                          "url": "http://m.me/merlabot?ref=invited_by_id",
-                                                          "title": "고경표"
-                                                        }
-                                                      ]
-                                                    }
-                                                  ]
-                                                }
-                                              }
-                                            }
-                                          }
-                                        ]
-                                      }
-                                    ]
-                                  }
-                                }
-                          }
-                       }
-                });
-            }
+passport.serializeUser(function(profile, cb) {
+    cb(null, profile);
 });
 
-// Logic for running your server with HTTPS here
-app.listen((process.env.PORT || 8000), () => {
-    console.log("App is up and running...");
-}); // set up
+passport.deserializeUser(function(profile, cb) {
+    cb(null, profile);
+});
+
+passport.use(new FacebookStrategy({
+        clientID: config.FB_APP_ID,
+        clientSecret: config.FB_APP_SECRET,
+        callbackURL: config.SERVER_URL + "auth/facebook/callback"
+    },
+    function(accessToken, refreshToken, profile, cb) {
+        process.nextTick(function() {
+            return cb(null, profile);
+        });
+    }
+));
+
+app.get('/auth/facebook', passport.authenticate('facebook',{scope:'public_profile'}));
+
+
+app.get('/auth/facebook/callback',
+    passport.authenticate('facebook', { successRedirect : '/broadcast/broadcast', failureRedirect: '/broadcast' }));
+
+app.set('view engine', 'ejs');
+
+const credentials = {
+    client_email: config.GOOGLE_CLIENT_EMAIL,
+    private_key: config.GOOGLE_PRIVATE_KEY,
+};
+
+const sessionClient = new dialogflow.SessionsClient(
+	{
+		projectId: config.GOOGLE_PROJECT_ID,
+		credentials
+	}
+);
+
+
+const sessionIds = new Map();
+const usersMap = new Map();
+
+// Index route
+app.get('/', function (req, res) {
+	res.send('Hello world, I am a chat bot')
+})
+
+app.use('/broadcast', broadcast);
+app.use('/webviews', webviews);
+
+
+
+// for Facebook verification
+app.get('/webhook/', function (req, res) {
+	console.log("request");
+	if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === config.FB_VERIFY_TOKEN) {
+		res.status(200).send(req.query['hub.challenge']);
+	} else {
+		console.error("Failed validation. Make sure the validation tokens match.");
+		res.sendStatus(403);
+	}
+})
+
+/*
+ * All callbacks for Messenger are POST-ed. They will be sent to the same
+ * webhook. Be sure to subscribe your app to your page to receive callbacks
+ * for your page. 
+ * https://developers.facebook.com/docs/messenger-platform/product-overview/setup#subscribe_app
+ *
+ */
+app.post('/webhook/', function (req, res) {
+	var data = req.body;
+	console.log(JSON.stringify(data));
+
+	// Make sure this is a page subscription
+	if (data.object == 'page') {
+		// Iterate over each entry
+		// There may be multiple if batched
+		data.entry.forEach(function (pageEntry) {
+			var pageID = pageEntry.id;
+			var timeOfEvent = pageEntry.time;
+
+            // Secondary Receiver is in control - listen on standby channel
+            if (pageEntry.standby) {
+                // iterate webhook events from standby channel
+                pageEntry.standby.forEach(event => {
+                    const psid = event.sender.id;
+                    const message = event.message;
+                    console.log('message from: ', psid);
+                    console.log('message to inbox: ', message);
+                });
+            }
+
+            // Bot is in control - listen for messages
+            if (pageEntry.messaging) {
+                // Iterate over each messaging event
+                pageEntry.messaging.forEach(function (messagingEvent) {
+                    if (messagingEvent.optin) {
+                        fbService.receivedAuthentication(messagingEvent);
+                    } else if (messagingEvent.message) {
+                        receivedMessage(messagingEvent);
+                    } else if (messagingEvent.delivery) {
+                        fbService.receivedDeliveryConfirmation(messagingEvent);
+                    } else if (messagingEvent.postback) {
+                        receivedPostback(messagingEvent);
+                    } else if (messagingEvent.read) {
+                        fbService.receivedMessageRead(messagingEvent);
+                    } else if (messagingEvent.account_linking) {
+                        fbService.receivedAccountLink(messagingEvent);
+                    } else if (messagingEvent.pass_thread_control) {
+                        // do something with the metadata: messagingEvent.pass_thread_control.metadata
+                    } else {
+                        console.log("Webhook received unknown messagingEvent: ", messagingEvent);
+                    }
+                });
+            }
+		});
+
+		// Assume all went well.
+		// You must send back a 200, within 20 seconds
+		res.sendStatus(200);
+	}
+});
+
+
+function setSessionAndUser(senderID) {
+    if (!sessionIds.has(senderID)) {
+        sessionIds.set(senderID, uuid.v1());
+    }
+
+    if (!usersMap.has(senderID)) {
+        userService.addUser(function(user){
+            usersMap.set(senderID, user);
+        }, senderID);
+    }
+}
+
+
+function receivedMessage(event) {
+
+	var senderID = event.sender.id;
+	var recipientID = event.recipient.id;
+	var timeOfMessage = event.timestamp;
+	var message = event.message;
+
+    setSessionAndUser(senderID);
+
+	//console.log("Received message for user %d and page %d at %d with message:", senderID, recipientID, timeOfMessage);
+	//console.log(JSON.stringify(message));
+
+	var isEcho = message.is_echo;
+	var messageId = message.mid;
+	var appId = message.app_id;
+	var metadata = message.metadata;
+
+	// You may get a text or attachment but not both
+	var messageText = message.text;
+	var messageAttachments = message.attachments;
+	var quickReply = message.quick_reply;
+
+	if (isEcho) {
+        fbService.handleEcho(messageId, appId, metadata);
+		return;
+	} else if (quickReply) {
+        handleQuickReply(senderID, quickReply, messageId);
+		return;
+	}
+
+
+	if (messageText) {
+		//send message to DialogFlow
+        dialogflowService.sendTextQueryToDialogFlow(sessionIds, handleDialogFlowResponse, senderID, messageText);
+	} else if (messageAttachments) {
+        fbService.handleMessageAttachments(messageAttachments, senderID);
+	}
+}
+
+
+function handleQuickReply(senderID, quickReply, messageId) {
+    var quickReplyPayload = quickReply.payload;
+    switch (quickReplyPayload) {
+        case 'MENU_RECOMMENDATION':
+            //ask if want to be recommended menu
+            dialogflowService.sendEventToDialogFlow(sessionIds, handleDialogFlowResponse, senderID, 'MENU_RECOMMENDATION');
+            break;
+        case 'MENU_RECOMMENDATION_YES':
+            //recommend menu
+            dialogflowService.sendEventToDialogFlow(sessionIds, handleDialogFlowResponse, senderID, 'MENU_RECOMMENDATION_YES');
+            break;
+        case 'IN_SINGAPORE':
+            fbService.sendTypingOn(senderID);
+
+            //Ask how's Singapore
+
+             setTimeout(function() {
+                let responseText = "그렇구나!" + "싱가폴 어때?";
+
+                let replies = [
+                    {
+                        "content_type": "text",
+                        "title": "좋아",
+                        "payload": "MENU_RECOMMENDATION"
+                    },
+                    {
+                        "content_type": "text",
+                        "title": "너무 더워 ㅜ",
+                        "payload": "MENU_RECOMMENDATION"
+                    }
+                ];
+
+                fbService.sendQuickReply(senderID, responseText, replies);
+            }, 2000);
+            break;
+        case 'NOT_IN_SINGAPORE':
+            fbService.sendTypingOn(senderID);
+
+            //Ask if traveller
+
+             setTimeout(function() {
+                let responseText = "아항~" +
+                    "싱가포르 여행하려구?";
+
+                let replies = [
+                    {
+                        "content_type": "text",
+                        "title": "응ㅎㅎ",
+                        "payload": "MENU_RECOMMENDATION"
+                    },
+                    {
+                        "content_type": "text",
+                        "title": "아니 그냥 알아보는중~",
+                        "payload": "MENU_RECOMMENDATION"
+                    }
+                ];
+
+                fbService.sendQuickReply(senderID, responseText, replies);
+            }, 2000);
+            break;
+
+        default:
+            dialogflowService.sendTextQueryToDialogFlow(sessionIds, handleDialogFlowResponse, senderID, quickReplyPayload);
+            break;
+    }
+}
+
+
+function handleDialogFlowAction(sender, action, messages, contexts, parameters) {
+	switch (action) {
+        case "input.welcome":
+            fbService.handleMessages(messages, sender);
+
+            fbService.sendTypingOn(sender);
+
+            //small talk
+
+             setTimeout(function() {
+                let responseText = "안녕! 나는 싱가폴의 보물 멀라봇이야" +
+                    "지금 싱가폴이야?";
+
+                let replies = [
+                    {
+                        "content_type": "text",
+                        "title": "응",
+                        "payload": "IN_SINGAPORE"
+                    },
+                    {
+                        "content_type": "text",
+                        "title": "아니",
+                        "payload": "NOT_IN_SINGAPORE"
+                    }
+                ];
+
+                fbService.sendQuickReply(sender, responseText, replies);
+            }, 2000);
+
+            break;
+        case "ask-menu-flow":
+            fbService.sendGifMessage(sender,"/assets/merlabot-hungry.gif");
+            setTimeout(function() {
+                let responseText = "배고프지! 내가 이따 뭐먹을지 정해줄께";
+
+                let replies = [
+                    {
+                        "content_type": "text",
+                        "title": "그래!",
+                        "payload": "MENU_RECOMMENDATION_YES"
+                    }
+                ];
+
+                fbService.sendQuickReply(sender, responseText, replies);
+            }, 4000);
+
+            break;
+        case "youngja":
+            setTimeout(function() {
+                let responseText = "뭐 먹을래?";
+
+                let replies = [
+                    {
+                        "content_type": "text",
+                        "title": "동남아의 맛",
+                        "payload": "sea"
+                    },
+                     {
+                        "content_type": "text",
+                        "title": "한국의 맛",
+                        "payload": "korean"
+                    },
+                     {
+                        "content_type": "text",
+                        "title": "중국의 맛",
+                        "payload": "chinese"
+                    },
+                     {
+                        "content_type": "text",
+                        "title": "모르겠다..",
+                        "payload": "etc"
+                    }
+
+                ];
+
+                fbService.sendQuickReply(sender, responseText, replies);
+            }, 4000);
+
+            break;
+        case "talk.human":
+            fbService.sendPassThread(sender);
+            break;
+        case "unsubscribe":
+            userService.newsletterSettings(function(updated) {
+                if (updated) {
+                    fbService.sendTextMessage(sender, "You're unsubscribed. You can always subscribe back!");
+                } else {
+                    fbService.sendTextMessage(sender, "Newsletter is not available at this moment." +
+                        "Try again later!");
+                }
+            }, 0, sender);
+            break;
+
+        case "buy.iphone":
+            colors.readUserColor(function(color) {
+                    let reply;
+                    if (color === '') {
+                        reply = 'In what color would you like to have it?';
+                    } else {
+                        reply = `Would you like to order it in your favourite color ${color}?`;
+                    }
+                fbService.sendTextMessage(sender, reply);
+
+                }, sender
+            )
+            break;
+        case "iphone_colors.fovourite":
+            colors.updateUserColor(parameters.fields['color'].stringValue, sender);
+            let reply = `Oh, I like it, too. I'll remember that.`;
+            fbService.sendTextMessage(sender, reply);
+            break;
+        case "iphone_colors":
+            colors.readAllColors(function (allColors) {
+                let allColorsString = allColors.join(', ');
+                let reply = `IPhone xxx is available in ${allColorsString}. What is your favourite color?`;
+                fbService.sendTextMessage(sender, reply);
+            });
+            break;
+        case "get-current-weather":
+            if ( parameters.fields['geo-city'].stringValue!='') {
+
+                weatherService(function(weatherResponse){
+                    if (!weatherResponse) {
+                        fbService.sendTextMessage(sender,
+                            `No weather forecast available for ${parameters.fields['geo-city'].stringValue}`);
+                    } else {
+                        let reply = `${messages[0].text.text} ${weatherResponse}`;
+                        fbService.sendTextMessage(sender, reply);
+                    }
+
+
+                }, parameters.fields['geo-city'].stringValue);
+            } else {
+                fbService.sendTextMessage(sender, 'No weather forecast available');
+            }
+        	break;
+        case "faq-delivery":
+            fbService.handleMessages(messages, sender);
+
+            fbService.sendTypingOn(sender);
+
+            //ask what user wants to do next
+            setTimeout(function() {
+                let buttons = [
+                    {
+                        type:"web_url",
+                        url:"https://www.myapple.com/track_order",
+                        title:"Track my order"
+                    },
+                    {
+                        type:"phone_number",
+                        title:"Call us",
+                        payload:"+16505551234",
+                    },
+                    {
+                        type:"postback",
+                        title:"Keep on Chatting",
+                        payload:"CHAT"
+                    }
+                ];
+
+                fbService.sendButtonMessage(sender, "What would you like to do next?", buttons);
+            }, 3000)
+
+            break;
+        case "detailed-application":
+            if (fbService.isDefined(contexts[0]) &&
+                (contexts[0].name.includes('job_application') || contexts[0].name.includes('job-application-details_dialog_context'))
+                && contexts[0].parameters) {
+                let phone_number = (fbService.isDefined(contexts[0].parameters.fields['phone-number'])
+                    && contexts[0].parameters.fields['phone-number'] != '') ? contexts[0].parameters.fields['phone-number'].stringValue : '';
+                let user_name = (fbService.isDefined(contexts[0].parameters.fields['user-name'])
+                    && contexts[0].parameters.fields['user-name'] != '') ? contexts[0].parameters.fields['user-name'].stringValue : '';
+                let previous_job = (fbService.isDefined(contexts[0].parameters.fields['previous-job'])
+                    && contexts[0].parameters.fields['previous-job'] != '') ? contexts[0].parameters.fields['previous-job'].stringValue : '';
+                let years_of_experience = (fbService.isDefined(contexts[0].parameters.fields['years-of-experience'])
+                    && contexts[0].parameters.fields['years-of-experience'] != '') ? contexts[0].parameters.fields['years-of-experience'].stringValue : '';
+                let job_vacancy = (fbService.isDefined(contexts[0].parameters.fields['job-vacancy'])
+                    && contexts[0].parameters.fields['job-vacancy'] != '') ? contexts[0].parameters.fields['job-vacancy'].stringValue : '';
+
+
+                if (phone_number == '' && user_name != '' && previous_job != '' && years_of_experience == '') {
+
+                    let replies = [
+                        {
+                            "content_type":"text",
+                            "title":"Less than 1 year",
+                            "payload":"Less than 1 year"
+                        },
+                        {
+                            "content_type":"text",
+                            "title":"Less than 10 years",
+                            "payload":"Less than 10 years"
+                        },
+                        {
+                            "content_type":"text",
+                            "title":"More than 10 years",
+                            "payload":"More than 10 years"
+                        }
+                    ];
+                    fbService.sendQuickReply(sender, messages[0].text.text[0], replies);
+                } else if (phone_number != '' && user_name != '' && previous_job != '' && years_of_experience != ''
+                    && job_vacancy != '') {
+
+                    jobApplicationService(phone_number, user_name, previous_job, years_of_experience, job_vacancy);
+
+                    fbService.handleMessages(messages, sender);
+
+                } else {
+                    fbService.handleMessages(messages, sender);
+                }
+            }
+            break;
+		default:
+			//unhandled action, just send back the text
+            fbService.handleMessages(messages, sender);
+	}
+}
+
+
+function handleMessages(messages, sender) {
+    let timeoutInterval = 1100;
+    let previousType ;
+    let cardTypes = [];
+    let timeout = 0;
+    for (var i = 0; i < messages.length; i++) {
+
+        if ( previousType == "card" && (messages[i].message != "card" || i == messages.length - 1)) {
+            timeout = (i - 1) * timeoutInterval;
+            setTimeout(handleCardMessages.bind(null, cardTypes, sender), timeout);
+            cardTypes = [];
+            timeout = i * timeoutInterval;
+            setTimeout(handleMessage.bind(null, messages[i], sender), timeout);
+        } else if ( messages[i].message == "card" && i == messages.length - 1) {
+            cardTypes.push(messages[i]);
+            timeout = (i - 1) * timeoutInterval;
+            setTimeout(handleCardMessages.bind(null, cardTypes, sender), timeout);
+            cardTypes = [];
+        } else if ( messages[i].message == "card") {
+            cardTypes.push(messages[i]);
+        } else  {
+
+            timeout = i * timeoutInterval;
+            setTimeout(handleMessage.bind(null, messages[i], sender), timeout);
+        }
+
+        previousType = messages[i].message;
+
+    }
+}
+
+function handleDialogFlowResponse(sender, response) {
+    let responseText = response.fulfillmentMessages.fulfillmentText;
+
+    let messages = response.fulfillmentMessages;
+    let action = response.action;
+    let contexts = response.outputContexts;
+    let parameters = response.parameters;
+
+    fbService.sendTypingOff(sender);
+
+    if (fbService.isDefined(action)) {
+        handleDialogFlowAction(sender, action, messages, contexts, parameters);
+    } else if (fbService.isDefined(messages)) {
+        fbService.handleMessages(messages, sender);
+	} else if (responseText == '' && !fbService.isDefined(action)) {
+		//dialogflow could not evaluate input.
+        fbService.sendTextMessage(sender, "I'm not sure what you want. Can you be more specific?");
+	} else if (fbService.isDefined(responseText)) {
+        fbService.sendTextMessage(sender, responseText);
+	}
+}
+
+
+async function resolveAfterXSeconds(x) {
+    return new Promise(resolve => {
+        setTimeout(() => {
+            resolve(x);
+        }, x * 1000);
+    });
+}
+
+
+async function greetUserText(userId) {
+    let user = usersMap.get(userId);
+    if (!user) {
+        await resolveAfterXSeconds(2);
+        user = usersMap.get(userId);
+    }
+
+    if (user) {
+         fbService.sendTypingOn(userId);
+
+            //small talk
+
+             setTimeout(function() {
+                let responseText = "안녕!" + user.first_name + "쓰! "+" 나는 싱가폴의 보물 멀라봇이야." + " 지금 싱가폴이야?";
+
+                let replies = [
+                    {
+                        "content_type": "text",
+                        "title": "응",
+                        "payload": "IN_SINGAPORE"
+                    },
+                    {
+                        "content_type": "text",
+                        "title": "아니",
+                        "payload": "NOT_IN_SINGAPORE"
+                    }
+                ];
+
+                fbService.sendQuickReply(userId, responseText, replies);
+            }, 2000);
+
+    } else {
+        fbService.sendTypingOn(userId);
+
+            //small talk
+
+             setTimeout(function() {
+               let responseText = "안녕!" + user.first_name + "쓰! "+" 나는 싱가폴의 보물 멀라봇이야." + " 지금 싱가폴이야?";
+
+                let replies = [
+                    {
+                        "content_type": "text",
+                        "title": "응",
+                        "payload": "IN_SINGAPORE"
+                    },
+                    {
+                        "content_type": "text",
+                        "title": "아니",
+                        "payload": "NOT_IN_SINGAPORE"
+                    }
+                ];
+
+                fbService.sendQuickReply(userId, responseText, replies);
+            }, 2000);
+    }
+}
+
+
+
+function sendFunNewsSubscribe(userId) {
+    let responseText = "I can send you latest fun technology news, " +
+        "you'll be on top of things and you'll get some laughts. How often would you like to receive them?";
+
+    let replies = [
+        {
+            "content_type": "text",
+            "title": "Once per week",
+            "payload": "NEWS_PER_WEEK"
+        },
+        {
+            "content_type": "text",
+            "title": "Once per day",
+            "payload": "NEWS_PER_DAY"
+        }
+    ];
+
+    fbService.sendQuickReply(userId, responseText, replies);
+}
+
+/*
+ * Call the Send API. The message data goes in the body. If successful, we'll 
+ * get the message id in a response 
+ *
+ */
+function callSendAPI(messageData) {
+	request({
+		uri: 'https://graph.facebook.com/v3.2/me/messages',
+		qs: {
+			access_token: config.FB_PAGE_TOKEN
+		},
+		method: 'POST',
+		json: messageData
+
+	}, function (error, response, body) {
+		if (!error && response.statusCode == 200) {
+			var recipientId = body.recipient_id;
+			var messageId = body.message_id;
+
+			if (messageId) {
+				console.log("Successfully sent message with id %s to recipient %s",
+					messageId, recipientId);
+			} else {
+				console.log("Successfully called Send API for recipient %s",
+					recipientId);
+			}
+		} else {
+			console.error("Failed calling Send API", response.statusCode, response.statusMessage, body.error);
+		}
+	});
+}
+
+
+/*
+ * Postback Event
+ *
+ * This event is called when a postback is tapped on a Structured Message. 
+ * https://developers.facebook.com/docs/messenger-platform/webhook-reference/postback-received
+ * 
+ */
+function receivedPostback(event) {
+	var senderID = event.sender.id;
+	var recipientID = event.recipient.id;
+	var timeOfPostback = event.timestamp;
+
+    setSessionAndUser(senderID);
+
+	// The 'payload' param is a developer-defined field which is set in a postback 
+	// button for Structured Messages. 
+	var payload = event.postback.payload;
+
+	switch (payload) {
+        case 'FUN_NEWS':
+            sendFunNewsSubscribe(senderID);
+            break;
+        case 'GET_STARTED':
+            greetUserText(senderID);
+            break;
+        case 'JOB_APPLY':
+            //get feedback with new jobs
+            dialogflowService.sendEventToDialogFlow(sessionIds, handleDialogFlowResponse, senderID, 'JOB_OPENINGS');
+            break;
+        case 'CHAT':
+            //user wants to chat
+            fbService.sendTextMessage(senderID, "I love chatting too. Do you have any other questions for me?");
+            break;
+        default:
+			//unindentified payload
+            fbService.sendTextMessage(senderID, "I'm not sure what you want. Can you be more specific?");
+			break;
+	}
+
+	console.log("Received postback for user %d and page %d with payload '%s' " +
+		"at %d", senderID, recipientID, payload, timeOfPostback);
+
+}
+
+
+
+/*
+ * Message Read Event
+ *
+ * This event is called when a previously-sent message has been read.
+ * https://developers.facebook.com/docs/messenger-platform/webhook-reference/message-read
+ * 
+ */
+function receivedMessageRead(event) {
+	var senderID = event.sender.id;
+	var recipientID = event.recipient.id;
+
+	// All messages before watermark (a timestamp) or sequence have been seen.
+	var watermark = event.read.watermark;
+	var sequenceNumber = event.read.seq;
+
+	console.log("Received message read event for watermark %d and sequence " +
+		"number %d", watermark, sequenceNumber);
+}
+
+/*
+ * Account Link Event
+ *
+ * This event is called when the Link Account or UnLink Account action has been
+ * tapped.
+ * https://developers.facebook.com/docs/messenger-platform/webhook-reference/account-linking
+ * 
+ */
+function receivedAccountLink(event) {
+	var senderID = event.sender.id;
+	var recipientID = event.recipient.id;
+
+	var status = event.account_linking.status;
+	var authCode = event.account_linking.authorization_code;
+
+	console.log("Received account link event with for user %d with status %s " +
+		"and auth code %s ", senderID, status, authCode);
+}
+
+/*
+ * Delivery Confirmation Event
+ *
+ * This event is sent to confirm the delivery of a message. Read more about 
+ * these fields at https://developers.facebook.com/docs/messenger-platform/webhook-reference/message-delivered
+ *
+ */
+function receivedDeliveryConfirmation(event) {
+	var senderID = event.sender.id;
+	var recipientID = event.recipient.id;
+	var delivery = event.delivery;
+	var messageIDs = delivery.mids;
+	var watermark = delivery.watermark;
+	var sequenceNumber = delivery.seq;
+
+	if (messageIDs) {
+		messageIDs.forEach(function (messageID) {
+			console.log("Received delivery confirmation for message ID: %s",
+				messageID);
+		});
+	}
+
+	console.log("All message before %d were delivered.", watermark);
+}
+
+/*
+ * Authorization Event
+ *
+ * The value for 'optin.ref' is defined in the entry point. For the "Send to 
+ * Messenger" plugin, it is the 'data-ref' field. Read more at 
+ * https://developers.facebook.com/docs/messenger-platform/webhook-reference/authentication
+ *
+ */
+function receivedAuthentication(event) {
+	var senderID = event.sender.id;
+	var recipientID = event.recipient.id;
+	var timeOfAuth = event.timestamp;
+
+	// The 'ref' field is set in the 'Send to Messenger' plugin, in the 'data-ref'
+	// The developer can set this to an arbitrary value to associate the 
+	// authentication callback with the 'Send to Messenger' click event. This is
+	// a way to do account linking when the user clicks the 'Send to Messenger' 
+	// plugin.
+	var passThroughParam = event.optin.ref;
+
+	console.log("Received authentication for user %d and page %d with pass " +
+		"through param '%s' at %d", senderID, recipientID, passThroughParam,
+		timeOfAuth);
+
+	// When an authentication is received, we'll send a message back to the sender
+	// to let them know it was successful.
+	sendTextMessage(senderID, "Authentication successful");
+}
+
+/*
+ * Verify that the callback came from Facebook. Using the App Secret from 
+ * the App Dashboard, we can verify the signature that is sent with each 
+ * callback in the x-hub-signature field, located in the header.
+ *
+ * https://developers.facebook.com/docs/graph-api/webhooks#setup
+ *
+ */
+function verifyRequestSignature(req, res, buf) {
+	var signature = req.headers["x-hub-signature"];
+
+	if (!signature) {
+		throw new Error('Couldn\'t validate the signature.');
+	} else {
+		var elements = signature.split('=');
+		var method = elements[0];
+		var signatureHash = elements[1];
+
+		var expectedHash = crypto.createHmac('sha1', config.FB_APP_SECRET)
+			.update(buf)
+			.digest('hex');
+
+		if (signatureHash != expectedHash) {
+			throw new Error("Couldn't validate the request signature.");
+		}
+	}
+}
+
+function isDefined(obj) {
+	if (typeof obj == 'undefined') {
+		return false;
+	}
+
+	if (!obj) {
+		return false;
+	}
+
+	return obj != null;
+}
+
+// Spin up the server
+app.listen(app.get('port'), function () {
+	console.log('running on port', app.get('port'))
+})
